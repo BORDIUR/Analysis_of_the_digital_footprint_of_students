@@ -16,6 +16,18 @@ from sklearn.preprocessing import OneHotEncoder
 import base64
 import warnings
 warnings.filterwarnings('ignore')
+import os
+
+# Определяем путь к папке, где находится текущий скрипт
+script_dir = os.path.dirname(os.path.abspath(__file__))
+logo_path = os.path.join(script_dir, "Княгининский университет (логотип PNG)-13.png")
+
+# Затем везде, где использовался логотип, замените имя файла на переменную logo_path
+# Например, при загрузке изображения:
+if os.path.exists(logo_path):
+    st.image(logo_path, width=80)
+else:
+    st.markdown("**НГИЭУ**")
 
 # Функция для преобразования изображения в base64
 def get_image_base64(image_path):
