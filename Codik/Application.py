@@ -451,7 +451,7 @@ if st.session_state.df_processed is not None:
                 practice_df = pd.DataFrame(practice_results)
                 def highlight_status(val):
                     return 'background-color: #ffcccc' if val == 'не выполнено' else ''
-                st.dataframe(practice_df.style.applymap(highlight_status, subset=['Статус']), 
+                st.dataframe(practice_df.style.map(highlight_status, subset=['Статус']), 
                             use_container_width=True, hide_index=True)
                 
                 failed = [n for n in practice_nums if student_row.get(f'Оценка_{n}', 0) <= 0]
