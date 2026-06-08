@@ -27,7 +27,7 @@ logo_path = os.path.join(script_dir, "Княгининский универси�
 if os.path.exists(logo_path):
     st.image(logo_path, width=80)
 else:
-    st.markdown("** **")
+    st.markdown("**НГИЭУ**")
 
 # Функция для преобразования изображения в base64
 def get_image_base64(image_path):
@@ -64,18 +64,6 @@ st.markdown("""
     .streamlit-expanderHeader { background-color: #f8f9fa; color: #8B0000; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
-
-# Верхняя панель с логотипом
-logo_base64 = get_image_base64("Княгининский университет (логотип PNG)-13.png")
-col_logo, col_title = st.columns([1, 4])
-with col_logo:
-    if logo_base64:
-        st.markdown(f'<img src="data:image/png;base64,{logo_base64}" width="80">', unsafe_allow_html=True)
-    else:
-        st.markdown("**НГИЭУ**")
-with col_title:
-    st.markdown("<div class='main-header'>Анализ успеваемости студентов</div>", unsafe_allow_html=True)
-st.markdown("---")
 
 # =====================================================
 # ФУНКЦИИ
