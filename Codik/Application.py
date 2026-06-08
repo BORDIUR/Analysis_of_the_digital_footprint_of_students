@@ -1,9 +1,3 @@
-"""
-Приложение для анализа цифрового образовательного следа студентов
-Дисциплина: Численные методы
-Автор: Боков В.Е.
-"""
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -68,10 +62,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# =====================================================
 # ФУНКЦИИ
-# =====================================================
-
 def format_minutes_to_time(minutes):
     if pd.isna(minutes) or minutes <= 0:
         return "-"
@@ -199,10 +190,7 @@ def grade_cat_for_stats(score):
     else:
         return 5
 
-# =====================================================
 # ЗАГРУЗКА ДАННЫХ
-# =====================================================
-
 if 'df_processed' not in st.session_state:
     st.session_state.df_processed = None
 if 'practice_nums' not in st.session_state:
@@ -291,10 +279,7 @@ if uploaded_files:
                 with st.expander("Предпросмотр обработанных данных"):
                     st.dataframe(final_df.head(10), use_container_width=True)
 
-# =====================================================
 # АНАЛИЗ ДАННЫХ
-# =====================================================
-
 if st.session_state.df_processed is not None:
     df = st.session_state.df_processed
     practice_nums = st.session_state.practice_nums
@@ -372,12 +357,12 @@ if st.session_state.df_processed is not None:
     
     st.markdown("---")
     
-    # ========== ОСНОВНЫЕ ВКЛАДКИ ==========
+    # ОСНОВНЫЕ ВКЛАДКИ
     tab_students, tab_practices, tab_correlations, tab_stats = st.tabs([
         "Студенты", "Анализ практик", "Корреляции", "Статистика"
     ])
     
-    # ========== ВКЛАДКА 1: СТУДЕНТЫ ==========
+    # ВКЛАДКА 1: СТУДЕНТЫ
     with tab_students:
         st.markdown("<h3 style='color:#8B0000;'>Все студенты</h3>", unsafe_allow_html=True)
         st.markdown("<p>Нажмите на ID студента, чтобы увидеть подробную информацию</p>", unsafe_allow_html=True)
@@ -493,7 +478,7 @@ if st.session_state.df_processed is not None:
                 st.session_state.selected_student = None
                 st.rerun()
     
-    # ========== ВКЛАДКА 2: АНАЛИЗ ПРАКТИК ==========
+    # ВКЛАДКА 2: АНАЛИЗ ПРАКТИК
     with tab_practices:
         st.markdown("<h3 style='color:#8B0000;'>Анализ практик</h3>", unsafe_allow_html=True)
         
@@ -591,7 +576,7 @@ if st.session_state.df_processed is not None:
         - % без опозданий — доля выполнивших без задержки (начали в срок или раньше)
         """)
     
-    # ========== ВКЛАДКА 3: КОРРЕЛЯЦИИ ==========
+    # ВКЛАДКА 3: КОРРЕЛЯЦИИ
     with tab_correlations:
         st.markdown("<h3 style='color:#8B0000;'>Корреляционный анализ</h3>", unsafe_allow_html=True)
         
@@ -658,7 +643,7 @@ if st.session_state.df_processed is not None:
             - Близко к 0 → связь отсутствует
             """)
     
-    # ========== ВКЛАДКА 4: СТАТИСТИКА ==========
+    # ВКЛАДКА 4: СТАТИСТИКА
     with tab_stats:
         st.markdown("<h3 style='color:#8B0000;'>Типы студентов (кластеры)</h3>", unsafe_allow_html=True)
         
