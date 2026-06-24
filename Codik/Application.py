@@ -133,22 +133,40 @@ def time_to_minutes(time_str):
 
 def get_max_score_and_convert(score_raw, score_col_name):
     """Извлекает максимальный балл из названия столбца и переводит оценку в 5-балльную шкалу"""
+    # Извлекаем максимальный балл из названия столбца
     match = re.search(r'(\d+(?:\.\d+)?)', score_col_name)
     if match:
         max_score = float(match.group(1))
     else:
         max_score = 5.0
     
+    # Проверяем, что оценка не пустая и не является строкой "Еще не оценено"
     if pd.isna(score_raw) or score_raw == '-' or score_raw == '—' or str(score_raw).strip() == '':
         return 0, max_score
     
-    try:
-        score_str = str(score_raw).replace(',', '.').strip()
-        score = float(score_str)
-    except:
+    # Проверяем на "Еще не оценено"
+    if isinstance(score_raw, str) and ('Еще не оценено' in score_raw or 'не оценено' in score_raw):
         return 0, max_score
     
-    percent = score / max_score * 100
+    try:
+        # Преобразуем строку с запятой в число
+        if isinstance(score_raw, str):
+            score_str = score_raw.replace(',', '.').strip()
+            # Удаляем все символы кроме цифр, точки и минуса
+            score_str = re.sub(r'[^\d.\-]', '', score_str)
+            if score_str == '' or score_str == '-':
+                return 0, max_score
+            score = float(score_str)
+        else:
+            score = float(score_raw)
+    except (ValueError, TypeError):
+        return 0, max_score
+    
+    # Если оценка отрицательная или слишком большая, возвращаем 0
+    if score < 0 or score > max_score * 1.1:  # Допускаем погрешность 10%
+        return 0, max_score
+    
+    percent = score / max_score * 100 if max_score > 0 else 0
     if percent < 51:
         grade = 2
     elif percent < 71:
@@ -161,24 +179,43 @@ def get_max_score_and_convert(score_raw, score_col_name):
     return grade, max_score
 
 def clean_practice_file(df, practice_num):
+    """Очищает данные практики, игнорируя детальные баллы"""
     cleaned_data = []
     score_col_name = None
+    
+    # Ищем столбец с оценкой (игнорируем детальные баллы с точками)
     for col in df.columns:
-        if 'Оценка' in col or 'оценка' in col:
+        # Ищем главный столбец с оценкой (не детальный)
+        if ('Оценка' in col or 'оценка' in col) and '.' not in col:
             score_col_name = col
             break
     
+    # Если не нашли, ищем любой столбец с оценкой
+    if score_col_name is None:
+        for col in df.columns:
+            if 'Оценка' in col or 'оценка' in col:
+                score_col_name = col
+                break
+    
     for idx, row in df.iterrows():
+        # Извлекаем ФИО
         fio_raw = f"{row.get('Фамилия', '')} {row.get('Имя', '')}".strip()
         fio = re.sub(r'[★*]', '', fio_raw).strip()
         if not fio or fio == 'nan nan':
             continue
+        
+        # Получаем даты
         test_start = parse_russian_date(row.get('Тест начат'))
         test_end = parse_russian_date(row.get('Завершено'))
         time_spent = time_to_minutes(row.get('Затраченное время'))
         
-        score_raw = row.get(score_col_name, 0) if score_col_name else 0
-        grade, max_score = get_max_score_and_convert(score_raw, score_col_name)
+        # Получаем оценку (только из главного столбца)
+        if score_col_name:
+            score_raw = row.get(score_col_name, 0)
+            grade, max_score = get_max_score_and_convert(score_raw, score_col_name)
+        else:
+            grade = 0
+            max_score = 0
         
         cleaned_data.append({
             'ФИО': fio,
@@ -188,7 +225,28 @@ def clean_practice_file(df, practice_num):
             f'Завершено_{practice_num}': test_end,
             f'Затраченное_время_{practice_num}': time_spent
         })
+    
     return pd.DataFrame(cleaned_data)
+
+def clean_dataframe(df, practice_nums):
+    """Дополнительная очистка данных после загрузки всех практик"""
+    for n in practice_nums:
+        col_name = f'Оценка_{n}'
+        if col_name in df.columns:
+            # Преобразуем все значения в числа
+            df[col_name] = df[col_name].apply(lambda x: 0 if (
+                pd.isna(x) or 
+                x == '-' or 
+                x == '—' or 
+                str(x).strip() == '' or
+                (isinstance(x, str) and 'не оценено' in x.lower())
+            ) else float(str(x).replace(',', '.').strip()) if isinstance(x, str) else float(x))
+            
+            # Ограничиваем значения
+            max_val = df.get(f'Макс_балл_{n}', 5).iloc[0] if f'Макс_балл_{n}' in df.columns else 5
+            df[col_name] = df[col_name].clip(0, max_val)
+    
+    return df
 
 def calculate_survival(student_row, practice_nums):
     survival = []
@@ -276,10 +334,26 @@ if uploaded_files:
             with st.spinner("Обработка данных..."):
                 all_data = {}
                 for n, file in practice_files.items():
-                    df = pd.read_excel(file)
-                    cleaned = clean_practice_file(df, n)
-                    all_data[n] = cleaned
+                    try:
+                        df = pd.read_excel(file)
+                        # Проверяем наличие обязательных колонок
+                        if 'Фамилия' not in df.columns or 'Имя' not in df.columns:
+                            st.error(f"В файле {file.name} отсутствуют колонки 'Фамилия' или 'Имя'")
+                            continue
+                        cleaned = clean_practice_file(df, n)
+                        if not cleaned.empty:
+                            all_data[n] = cleaned
+                        else:
+                            st.warning(f"Практика {n} не содержит данных")
+                    except Exception as e:
+                        st.error(f"Ошибка при обработке файла {file.name}: {str(e)}")
+                        continue
                 
+                if not all_data:
+                    st.error("Не удалось обработать ни одного файла")
+                    st.stop()
+                
+                # Объединяем данные по студентам
                 students = {}
                 for n, df in all_data.items():
                     for _, row in df.iterrows():
@@ -290,6 +364,7 @@ if uploaded_files:
                         students[fio][f'Затраченное_время_{n}'] = row.get(f'Затраченное_время_{n}', 0)
                         students[fio][f'Тест_начат_{n}'] = row.get(f'Тест_начат_{n}')
                 
+                # Создаем финальный DataFrame
                 final_df = pd.DataFrame([{
                     'ID': i + 1,
                     'ФИО': fio,
@@ -297,6 +372,15 @@ if uploaded_files:
                     **{f'Затраченное_время_{n}': data.get(f'Затраченное_время_{n}', 0) for n in practice_files.keys()},
                     **{f'Тест_начат_{n}': data.get(f'Тест_начат_{n}') for n in practice_files.keys()},
                 } for i, (fio, data) in enumerate(students.items())])
+                
+                # Добавляем максимальные баллы для каждой практики
+                for n in practice_files.keys():
+                    if n in all_data and not all_data[n].empty:
+                        max_val = all_data[n][f'Макс_балл_{n}'].iloc[0] if f'Макс_балл_{n}' in all_data[n].columns else 5
+                        final_df[f'Макс_балл_{n}'] = max_val
+                
+                # Применяем дополнительную очистку
+                final_df = clean_dataframe(final_df, practice_files.keys())
                 
                 # Расчёт запаздываний
                 for n in practice_files.keys():
@@ -314,7 +398,8 @@ if uploaded_files:
                 st.session_state.df_processed = final_df
                 st.session_state.practice_nums = list(practice_files.keys())
                 st.session_state.open_dates = open_dates
-                st.success("Данные успешно обработаны!")
+                st.success(f"Данные успешно обработаны! Загружено {len(final_df)} студентов")
+                
                 with st.expander("Предпросмотр обработанных данных"):
                     st.dataframe(final_df.head(10), use_container_width=True)
 
