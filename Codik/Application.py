@@ -372,11 +372,17 @@ if st.session_state.df_processed is not None:
         hamming = sum(1 for a, b in zip(seq, etalon) if a != b)
         survival = calculate_survival(row, practice_nums)
         student_stats.append({
-            'ID': student_id, 'ФИО': row['ФИО'], 'Сумма баллов': round(total_score, 2),
-            'Процент от максимума': round(percent_of_max, 2), 'Выполнено практик': count_done,
-            'Всего практик': len(practice_nums), 'Кластер': clusters[idx] if len(clusters) > idx else 0,
-            'Расстояние_Хэмминга': hamming, 'Выживаемость': survival
+            'ID': student_id,
+            'ФИО': row['ФИО'],
+            'Сумма баллов': round(total_score, 2),
+            'Процент от максимума': round(percent_of_max, 2),
+            'Выполнено практик': count_done,
+            'Всего практик': len(practice_nums),
+            'Кластер': clusters[idx] if len(clusters) > idx else 0,
+            'Расстояние_Хэмминга': hamming,
+            'Выживаемость': survival
         })
+    
     stats_df = pd.DataFrame(student_stats)
     
     if len(stats_df) > 0:
@@ -384,6 +390,7 @@ if st.session_state.df_processed is not None:
         stats_df['Группа риска'] = (stats_df['Процент от максимума'] <= risk_threshold).astype(int)
     else:
         stats_df['Группа риска'] = 0
+    
     stats_df = stats_df.sort_values(['Группа риска', 'Процент от максимума'], ascending=[False, False])
     
     # Основные метрики
@@ -404,7 +411,7 @@ if st.session_state.df_processed is not None:
         "Студенты", "Анализ практик", "Статистика"
     ])
     
-    # ========== ВКЛАДКА 1: СТУДЕНТЫ (с поиском) ==========
+    # ========== ВКЛАДКА 1: СТУДЕНТЫ ==========
     with tab_students:
         st.markdown("<h3 style='color:#8B0000;'>Все студенты</h3>", unsafe_allow_html=True)
         
@@ -487,7 +494,6 @@ if st.session_state.df_processed is not None:
                         'Затраченное время': format_minutes_to_time(time_minutes), 'Статус': статус
                     })
                 practice_df = pd.DataFrame(practice_results)
-                
                 def highlight_status(val):
                     return 'background-color: #ffcccc' if val == 'не выполнено' else ''
                 st.dataframe(practice_df.style.map(highlight_status, subset=['Статус']), 
@@ -532,7 +538,7 @@ if st.session_state.df_processed is not None:
                 st.session_state.selected_student = None
                 st.rerun()
     
-    # ========== ВКЛАДКА 2: АНАЛИЗ ПРАКТИК (с поиском) ==========
+    # ========== ВКЛАДКА 2: АНАЛИЗ ПРАКТИК ==========
     with tab_practices:
         st.markdown("<h3 style='color:#8B0000;'>Анализ практик</h3>", unsafe_allow_html=True)
         
