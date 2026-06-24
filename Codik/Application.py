@@ -381,9 +381,9 @@ if st.session_state.df_processed is not None:
     
     if len(stats_df) > 0:
         risk_threshold = stats_df['Процент от максимума'].quantile(0.33)
-        stats_df['Группа риска'] = stats_df['Процент от максимума'] <= risk_threshold
+        stats_df['Группа риска'] = (stats_df['Процент от максимума'] <= risk_threshold).astype(int)
     else:
-        stats_df['Группа риска'] = False
+        stats_df['Группа риска'] = 0
     stats_df = stats_df.sort_values(['Группа риска', 'Процент от максимума'], ascending=[False, False])
     
     # Основные метрики
@@ -445,7 +445,7 @@ if st.session_state.df_processed is not None:
                     else:
                         st.markdown("<span class='badge-cluster-3'>Кластер 3</span>", unsafe_allow_html=True)
                 with col6:
-                    if student['Группа риска']:
+                    if student['Группа риска'] == 1:
                         st.markdown("<span class='badge-cluster-3'>Группа риска</span>", unsafe_allow_html=True)
                     else:
                         if student['Процент от максимума'] >= 70:
@@ -488,7 +488,6 @@ if st.session_state.df_processed is not None:
                     })
                 practice_df = pd.DataFrame(practice_results)
                 
-                # Исправленный код с .map() вместо .applymap()
                 def highlight_status(val):
                     return 'background-color: #ffcccc' if val == 'не выполнено' else ''
                 st.dataframe(practice_df.style.map(highlight_status, subset=['Статус']), 
