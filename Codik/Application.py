@@ -14,6 +14,7 @@ from scipy.spatial.distance import pdist
 from sklearn.preprocessing import OneHotEncoder
 import base64
 import warnings
+import io
 warnings.filterwarnings('ignore')
 
 # Функция для преобразования изображения в base64
@@ -81,15 +82,34 @@ def format_minutes_to_time(minutes):
         return f"{int(mins)} мин"
 
 def extract_practice_number(filename):
+    """Извлекает номер практики из названия файла"""
     patterns = [
-        r'П\.З\._(\d+)', r'ПЗ[_\s\-]?(\d+)', r'практика[_\s\-]?(\d+)',
-        r'practice[_\s\-]?(\d+)', r'(\d+)\s*практика', r'(\d+)\.xlsx?',
-        r'[_-](\d+)[_-]', r'(\d+)$'
+        # Основные паттерны
+        r'П\.З\._(\d+)', 
+        r'ПЗ[_\s\-]?(\d+)', 
+        r'практика[_\s\-]?(\d+)',
+        r'практическ(?:ая|ой)\s+работ[аы]?\s*(\d+)',  # "Практическая работа 1"
+        r'practice[_\s\-]?(\d+)', 
+        r'(\d+)\s*практика', 
+        r'(\d+)\s*практическ',  # "1 практическая"
+        r'(\d+)\.xlsx?',
+        r'[_-](\d+)[_-]', 
+        r'(\d+)$',
+        # Дополнительные паттерны для разных форматов
+        r'работ[аы]?\s*(\d+)',  # "работа 1"
+        r'[_-]практическ[аяой]?\s*работ[аы]?\s*(\d+)',  # "-практическая работа 1"
     ]
     for pattern in patterns:
         match = re.search(pattern, filename, re.IGNORECASE)
         if match:
             return int(match.group(1))
+    
+    # Если не нашли по паттернам, пробуем найти любое число в названии
+    numbers = re.findall(r'\b(\d+)\b', filename)
+    if numbers:
+        # Берем последнее число (обычно это номер практики)
+        return int(numbers[-1])
+    
     return None
 
 def parse_russian_date(date_str):
@@ -178,6 +198,75 @@ def get_max_score_and_convert(score_raw, score_col_name):
     
     return grade, max_score
 
+def extract_student_name(row):
+    """Извлекает ФИО студента из различных форматов данных"""
+    # Проверяем наличие столбца ФИО
+    if 'ФИО' in row:
+        fio = str(row['ФИО']).strip()
+        if fio and fio != 'nan':
+            return fio
+    
+    # Проверяем наличие столбца "Фамилия,Имя" (в некоторых файлах)
+    if 'Фамилия,Имя' in row:
+        fio = str(row['Фамилия,Имя']).strip()
+        if fio and fio != 'nan':
+            return fio
+    
+    # Проверяем наличие столбцов Фамилия, Имя, Отчество
+    last_name = row.get('Фамилия', '')
+    first_name = row.get('Имя', '')
+    middle_name = row.get('Отчество', '')
+    
+    # Собираем ФИО из частей
+    parts = []
+    if last_name and str(last_name) != 'nan':
+        parts.append(str(last_name).strip())
+    if first_name and str(first_name) != 'nan':
+        parts.append(str(first_name).strip())
+    if middle_name and str(middle_name) != 'nan':
+        parts.append(str(middle_name).strip())
+    
+    if parts:
+        return ' '.join(parts)
+    
+    # Если ничего не найдено, проверяем другие возможные названия столбцов
+    possible_name_cols = ['Студент', 'Студенты', 'Name', 'Student', 'ФИО студента', 'ФИО обучающегося', 'ФИО учащегося', 'ФИО (полностью)']
+    for col in possible_name_cols:
+        if col in row:
+            value = str(row[col]).strip()
+            if value and value != 'nan':
+                return value
+    
+    return None
+
+def read_excel_with_fallback(file):
+    """Читает Excel файл с попыткой различных параметров"""
+    try:
+        # Пробуем прочитать как обычный Excel
+        df = pd.read_excel(file)
+        return df
+    except Exception as e:
+        # Если не получилось, пробуем прочитать с другим движком
+        try:
+            df = pd.read_excel(file, engine='openpyxl')
+            return df
+        except:
+            # Если всё равно ошибка, пробуем прочитать как CSV
+            try:
+                file.seek(0)
+                content = file.read().decode('utf-8')
+                # Пробуем разные разделители
+                for sep in [';', ',', '\t']:
+                    try:
+                        df = pd.read_csv(io.StringIO(content), sep=sep)
+                        if len(df.columns) > 1:
+                            return df
+                    except:
+                        continue
+                return None
+            except:
+                return None
+
 def clean_practice_file(df, practice_num):
     """Очищает данные практики, игнорируя детальные баллы"""
     cleaned_data = []
@@ -186,7 +275,7 @@ def clean_practice_file(df, practice_num):
     # Ищем столбец с оценкой (игнорируем детальные баллы с точками)
     for col in df.columns:
         # Ищем главный столбец с оценкой (не детальный)
-        if ('Оценка' in col or 'оценка' in col) and '.' not in col:
+        if ('Оценка' in col or 'оценка' in col) and '.' not in col and '/' in col:
             score_col_name = col
             break
     
@@ -199,10 +288,12 @@ def clean_practice_file(df, practice_num):
     
     for idx, row in df.iterrows():
         # Извлекаем ФИО
-        fio_raw = f"{row.get('Фамилия', '')} {row.get('Имя', '')}".strip()
-        fio = re.sub(r'[★*]', '', fio_raw).strip()
-        if not fio or fio == 'nan nan':
+        fio = extract_student_name(row)
+        if not fio or fio == 'nan':
             continue
+        
+        # Удаляем звездочки и другие спецсимволы
+        fio = re.sub(r'[★*]', '', fio).strip()
         
         # Получаем даты
         test_start = parse_russian_date(row.get('Тест начат'))
@@ -296,7 +387,7 @@ if 'practice_nums' not in st.session_state:
 st.markdown("### Загрузка данных")
 uploaded_files = st.file_uploader(
     "Выберите файлы практик",
-    type=['xlsx', 'xls'],
+    type=['xlsx', 'xls', 'csv'],
     accept_multiple_files=True,
     help="Можно выбрать несколько файлов одновременно (Ctrl+клик)"
 )
@@ -313,6 +404,7 @@ if uploaded_files:
     
     if unknown_files:
         st.warning(f"Не удалось определить номер практики для файлов: {unknown_files[:3]}...")
+        st.info("Убедитесь, что в названии файла есть номер практики (например: 'Практика 1', 'Практическая работа 2' и т.д.)")
     
     if practice_files:
         st.success(f"Загружено файлов: {len(uploaded_files)}, определено практик: {len(practice_files)}")
@@ -335,14 +427,34 @@ if uploaded_files:
                 all_data = {}
                 for n, file in practice_files.items():
                     try:
-                        df = pd.read_excel(file)
-                        # Проверяем наличие обязательных колонок
-                        if 'Фамилия' not in df.columns or 'Имя' not in df.columns:
-                            st.error(f"В файле {file.name} отсутствуют колонки 'Фамилия' или 'Имя'")
+                        # Пробуем прочитать файл с разными параметрами
+                        df = read_excel_with_fallback(file)
+                        
+                        if df is None:
+                            st.error(f"Не удалось прочитать файл {file.name}")
                             continue
+                        
+                        # Проверяем, есть ли вообще какие-либо данные
+                        if df.empty:
+                            st.warning(f"Файл {file.name} пуст")
+                            continue
+                        
+                        # Проверяем наличие столбцов с именами студентов
+                        has_name_cols = False
+                        for col in ['ФИО', 'Фамилия', 'Имя', 'Студент', 'Name', 'Student', 'ФИО студента', 'Фамилия,Имя']:
+                            if col in df.columns:
+                                has_name_cols = True
+                                break
+                        
+                        if not has_name_cols:
+                            # Показываем доступные столбцы для отладки
+                            st.warning(f"В файле {file.name} не найдены столбцы с именами студентов. Доступные столбцы: {list(df.columns)}")
+                            continue
+                        
                         cleaned = clean_practice_file(df, n)
                         if not cleaned.empty:
                             all_data[n] = cleaned
+                            st.info(f"Практика {n}: загружено {len(cleaned)} студентов")
                         else:
                             st.warning(f"Практика {n} не содержит данных")
                     except Exception as e:
