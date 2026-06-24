@@ -178,6 +178,41 @@ def get_max_score_and_convert(score_raw, score_col_name):
     
     return grade, max_score
 
+def extract_student_name(row):
+    """Извлекает ФИО студента из различных форматов данных"""
+    # Проверяем наличие столбца ФИО
+    if 'ФИО' in row:
+        fio = str(row['ФИО']).strip()
+        if fio and fio != 'nan':
+            return fio
+    
+    # Проверяем наличие столбцов Фамилия, Имя, Отчество
+    last_name = row.get('Фамилия', '')
+    first_name = row.get('Имя', '')
+    middle_name = row.get('Отчество', '')
+    
+    # Собираем ФИО из частей
+    parts = []
+    if last_name and str(last_name) != 'nan':
+        parts.append(str(last_name).strip())
+    if first_name and str(first_name) != 'nan':
+        parts.append(str(first_name).strip())
+    if middle_name and str(middle_name) != 'nan':
+        parts.append(str(middle_name).strip())
+    
+    if parts:
+        return ' '.join(parts)
+    
+    # Если ничего не найдено, проверяем другие возможные названия столбцов
+    possible_name_cols = ['Студент', 'Студенты', 'Name', 'Student', 'ФИО студента', 'ФИО обучающегося', 'ФИО учащегося']
+    for col in possible_name_cols:
+        if col in row:
+            value = str(row[col]).strip()
+            if value and value != 'nan':
+                return value
+    
+    return None
+
 def clean_practice_file(df, practice_num):
     """Очищает данные практики, игнорируя детальные баллы"""
     cleaned_data = []
@@ -199,10 +234,12 @@ def clean_practice_file(df, practice_num):
     
     for idx, row in df.iterrows():
         # Извлекаем ФИО
-        fio_raw = f"{row.get('Фамилия', '')} {row.get('Имя', '')}".strip()
-        fio = re.sub(r'[★*]', '', fio_raw).strip()
-        if not fio or fio == 'nan nan':
+        fio = extract_student_name(row)
+        if not fio or fio == 'nan':
             continue
+        
+        # Удаляем звездочки и другие спецсимволы
+        fio = re.sub(r'[★*]', '', fio).strip()
         
         # Получаем даты
         test_start = parse_russian_date(row.get('Тест начат'))
@@ -336,13 +373,27 @@ if uploaded_files:
                 for n, file in practice_files.items():
                     try:
                         df = pd.read_excel(file)
-                        # Проверяем наличие обязательных колонок
-                        if 'Фамилия' not in df.columns or 'Имя' not in df.columns:
-                            st.error(f"В файле {file.name} отсутствуют колонки 'Фамилия' или 'Имя'")
+                        
+                        # Проверяем, есть ли вообще какие-либо данные
+                        if df.empty:
+                            st.warning(f"Файл {file.name} пуст")
                             continue
+                        
+                        # Проверяем наличие столбцов с именами студентов
+                        has_name_cols = False
+                        for col in ['ФИО', 'Фамилия', 'Имя', 'Студент', 'Name', 'Student', 'ФИО студента']:
+                            if col in df.columns:
+                                has_name_cols = True
+                                break
+                        
+                        if not has_name_cols:
+                            st.warning(f"В файле {file.name} не найдены столбцы с именами студентов. Доступные столбцы: {list(df.columns)}")
+                            continue
+                        
                         cleaned = clean_practice_file(df, n)
                         if not cleaned.empty:
                             all_data[n] = cleaned
+                            st.info(f"Практика {n}: загружено {len(cleaned)} студентов")
                         else:
                             st.warning(f"Практика {n} не содержит данных")
                     except Exception as e:
