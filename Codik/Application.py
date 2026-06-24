@@ -487,9 +487,11 @@ if st.session_state.df_processed is not None:
                         'Затраченное время': format_minutes_to_time(time_minutes), 'Статус': статус
                     })
                 practice_df = pd.DataFrame(practice_results)
+                
+                # Исправленный код с .map() вместо .applymap()
                 def highlight_status(val):
                     return 'background-color: #ffcccc' if val == 'не выполнено' else ''
-                st.dataframe(practice_df.style.applymap(highlight_status, subset=['Статус']), 
+                st.dataframe(practice_df.style.map(highlight_status, subset=['Статус']), 
                             use_container_width=True, hide_index=True)
                 
                 failed = [n for n in practice_nums if student_row.get(f'Оценка_{n}', 0) <= 0]
