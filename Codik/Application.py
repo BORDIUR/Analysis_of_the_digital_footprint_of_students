@@ -14,6 +14,7 @@ from scipy.spatial.distance import pdist
 from sklearn.preprocessing import OneHotEncoder
 import base64
 import warnings
+import io
 warnings.filterwarnings('ignore')
 
 # Функция для преобразования изображения в base64
@@ -186,6 +187,12 @@ def extract_student_name(row):
         if fio and fio != 'nan':
             return fio
     
+    # Проверяем наличие столбца "Фамилия,Имя" (в некоторых файлах)
+    if 'Фамилия,Имя' in row:
+        fio = str(row['Фамилия,Имя']).strip()
+        if fio and fio != 'nan':
+            return fio
+    
     # Проверяем наличие столбцов Фамилия, Имя, Отчество
     last_name = row.get('Фамилия', '')
     first_name = row.get('Имя', '')
@@ -204,7 +211,7 @@ def extract_student_name(row):
         return ' '.join(parts)
     
     # Если ничего не найдено, проверяем другие возможные названия столбцов
-    possible_name_cols = ['Студент', 'Студенты', 'Name', 'Student', 'ФИО студента', 'ФИО обучающегося', 'ФИО учащегося']
+    possible_name_cols = ['Студент', 'Студенты', 'Name', 'Student', 'ФИО студента', 'ФИО обучающегося', 'ФИО учащегося', 'ФИО (полностью)']
     for col in possible_name_cols:
         if col in row:
             value = str(row[col]).strip()
@@ -212,6 +219,34 @@ def extract_student_name(row):
                 return value
     
     return None
+
+def read_excel_with_fallback(file):
+    """Читает Excel файл с попыткой различных параметров"""
+    try:
+        # Пробуем прочитать как обычный Excel
+        df = pd.read_excel(file)
+        return df
+    except Exception as e:
+        # Если не получилось, пробуем прочитать с другим движком
+        try:
+            df = pd.read_excel(file, engine='openpyxl')
+            return df
+        except:
+            # Если всё равно ошибка, пробуем прочитать как CSV
+            try:
+                file.seek(0)
+                content = file.read().decode('utf-8')
+                # Пробуем разные разделители
+                for sep in [';', ',', '\t']:
+                    try:
+                        df = pd.read_csv(io.StringIO(content), sep=sep)
+                        if len(df.columns) > 1:
+                            return df
+                    except:
+                        continue
+                return None
+            except:
+                return None
 
 def clean_practice_file(df, practice_num):
     """Очищает данные практики, игнорируя детальные баллы"""
@@ -221,7 +256,7 @@ def clean_practice_file(df, practice_num):
     # Ищем столбец с оценкой (игнорируем детальные баллы с точками)
     for col in df.columns:
         # Ищем главный столбец с оценкой (не детальный)
-        if ('Оценка' in col or 'оценка' in col) and '.' not in col:
+        if ('Оценка' in col or 'оценка' in col) and '.' not in col and '/' in col:
             score_col_name = col
             break
     
@@ -333,7 +368,7 @@ if 'practice_nums' not in st.session_state:
 st.markdown("### Загрузка данных")
 uploaded_files = st.file_uploader(
     "Выберите файлы практик",
-    type=['xlsx', 'xls'],
+    type=['xlsx', 'xls', 'csv'],
     accept_multiple_files=True,
     help="Можно выбрать несколько файлов одновременно (Ctrl+клик)"
 )
@@ -372,7 +407,12 @@ if uploaded_files:
                 all_data = {}
                 for n, file in practice_files.items():
                     try:
-                        df = pd.read_excel(file)
+                        # Пробуем прочитать файл с разными параметрами
+                        df = read_excel_with_fallback(file)
+                        
+                        if df is None:
+                            st.error(f"Не удалось прочитать файл {file.name}")
+                            continue
                         
                         # Проверяем, есть ли вообще какие-либо данные
                         if df.empty:
@@ -381,12 +421,13 @@ if uploaded_files:
                         
                         # Проверяем наличие столбцов с именами студентов
                         has_name_cols = False
-                        for col in ['ФИО', 'Фамилия', 'Имя', 'Студент', 'Name', 'Student', 'ФИО студента']:
+                        for col in ['ФИО', 'Фамилия', 'Имя', 'Студент', 'Name', 'Student', 'ФИО студента', 'Фамилия,Имя']:
                             if col in df.columns:
                                 has_name_cols = True
                                 break
                         
                         if not has_name_cols:
+                            # Показываем доступные столбцы для отладки
                             st.warning(f"В файле {file.name} не найдены столбцы с именами студентов. Доступные столбцы: {list(df.columns)}")
                             continue
                         
