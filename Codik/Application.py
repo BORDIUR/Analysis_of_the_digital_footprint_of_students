@@ -297,6 +297,14 @@ def clean_practice_file(df, practice_num):
     cleaned_data = []
     score_col_name = None
     
+    # Удаляем строку "Общее среднее" если она есть
+    if 'ФИО' in df.columns:
+        df = df[~df['ФИО'].astype(str).str.contains('Общее среднее', case=False, na=False)]
+    elif 'Фамилия' in df.columns:
+        df = df[~df['Фамилия'].astype(str).str.contains('Общее среднее', case=False, na=False)]
+    elif 'Студент' in df.columns:
+        df = df[~df['Студент'].astype(str).str.contains('Общее среднее', case=False, na=False)]
+    
     # Ищем столбец с оценкой (игнорируем детальные баллы с точками)
     for col in df.columns:
         # Ищем главный столбец с оценкой (не детальный)
