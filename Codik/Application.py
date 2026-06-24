@@ -43,6 +43,8 @@ st.markdown("""
     .stButton > button { background-color: #8B0000; color: white; border: none; border-radius: 5px; padding: 8px 20px; font-weight: bold; transition: all 0.3s; }
     .stButton > button:hover { background-color: #6B0000; color: white; }
     .info-box { background-color: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #8B0000; margin-bottom: 15px; }
+    .warning-box { background-color: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 15px; }
+    .success-box { background-color: #d4edda; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745; margin-bottom: 15px; }
     .badge-cluster-0 { background-color: #8B0000; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
     .badge-cluster-1 { background-color: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
     .badge-cluster-2 { background-color: #ffc107; color: #333; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
@@ -50,6 +52,7 @@ st.markdown("""
     .stMetric { background-color: #f8f9fa; border-radius: 8px; padding: 10px; }
     .stDataFrame { border-radius: 8px; overflow: hidden; }
     .streamlit-expanderHeader { background-color: #f8f9fa; color: #8B0000; font-weight: bold; }
+    .column-required { color: #dc3545; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,6 +67,29 @@ with col_logo:
 with col_title:
     st.markdown("<div class='main-header'>Анализ успеваемости студентов</div>", unsafe_allow_html=True)
 st.markdown("---")
+
+# =====================================================
+# ПАМЯТКА ПО СТОЛБЦАМ
+# =====================================================
+
+with st.expander("📋 Памятка: необходимые столбцы в файлах", expanded=False):
+    st.markdown("""
+    ### Для корректного анализа в файлах должны быть следующие столбцы:
+    
+    | Столбец | Описание | Пример |
+    |---------|----------|--------|
+    | <span class='column-required'>ФИО</span> | Полное имя студента | Иванов Иван Иванович |
+    | <span class='column-required'>Тест начат</span> | Дата начала теста | 1 сентября 2025 |
+    | <span class='column-required'>Завершено</span> | Дата завершения теста | 1 сентября 2025 |
+    | <span class='column-required'>Затраченное время</span> | Время выполнения | 30 мин |
+    | <span class='column-required'>Оценка/N</span> | Оценка с максимальным баллом | Оценка/3,00 |
+    
+    ### Важно:
+    - Номер практики определяется автоматически из названия файла
+    - Поддерживаются форматы: "Практика 1", "Практическая работа 2", "ПЗ_3" и т.д.
+    - Если оценка не выставлена (пусто, "-", "Еще не оценено"), она будет заменена на 0
+    - Детальные баллы (содержат точки в названии) игнорируются при анализе
+    """, unsafe_allow_html=True)
 
 # =====================================================
 # ФУНКЦИИ
