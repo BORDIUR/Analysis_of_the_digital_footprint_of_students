@@ -1,8 +1,12 @@
+"""
+Приложение для анализа цифрового образовательного следа студентов
+Автор: Боков В.Е.
+"""
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import re
-import os
 from datetime import datetime
 import plotly.express as px
 from scipy.cluster.hierarchy import linkage, cut_tree
@@ -11,20 +15,6 @@ from sklearn.preprocessing import OneHotEncoder
 import base64
 import warnings
 warnings.filterwarnings('ignore')
-
-# Верхняя панель с логотипом
-script_dir = os.path.dirname(os.path.abspath(__file__))
-logo_path = os.path.join(script_dir, "Княгининский университет (логотип PNG)-13.png")
-
-col_logo, col_title = st.columns([1, 4])
-with col_logo:
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=80)
-    else:
-        st.markdown("**НГИЭУ**")
-with col_title:
-    st.markdown("<div class='main-header'>Анализ успеваемости студентов</div>", unsafe_allow_html=True)
-st.markdown("---")
 
 # Функция для преобразования изображения в base64
 def get_image_base64(image_path):
@@ -62,7 +52,22 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Верхняя панель с логотипом
+logo_base64 = get_image_base64("Княгининский университет (логотип PNG)-13.png")
+col_logo, col_title = st.columns([1, 4])
+with col_logo:
+    if logo_base64:
+        st.markdown(f'<img src="data:image/png;base64,{logo_base64}" width="80">', unsafe_allow_html=True)
+    else:
+        st.markdown("**НГИЭУ**")
+with col_title:
+    st.markdown("<div class='main-header'>Анализ успеваемости студентов</div>", unsafe_allow_html=True)
+st.markdown("---")
+
+# =====================================================
 # ФУНКЦИИ
+# =====================================================
+
 def format_minutes_to_time(minutes):
     if pd.isna(minutes) or minutes <= 0:
         return "-"
@@ -126,8 +131,43 @@ def time_to_minutes(time_str):
         total_minutes += round(int(seconds_match.group(1)) / 60)
     return round(total_minutes)
 
+def get_max_score_and_convert(score_raw, score_col_name):
+    """Извлекает максимальный балл из названия столбца и переводит оценку в 5-балльную шкалу"""
+    match = re.search(r'(\d+(?:\.\d+)?)', score_col_name)
+    if match:
+        max_score = float(match.group(1))
+    else:
+        max_score = 5.0
+    
+    if pd.isna(score_raw) or score_raw == '-' or score_raw == '—' or str(score_raw).strip() == '':
+        return 0, max_score
+    
+    try:
+        score_str = str(score_raw).replace(',', '.').strip()
+        score = float(score_str)
+    except:
+        return 0, max_score
+    
+    percent = score / max_score * 100
+    if percent < 51:
+        grade = 2
+    elif percent < 71:
+        grade = 3
+    elif percent < 85:
+        grade = 4
+    else:
+        grade = 5
+    
+    return grade, max_score
+
 def clean_practice_file(df, practice_num):
     cleaned_data = []
+    score_col_name = None
+    for col in df.columns:
+        if 'Оценка' in col or 'оценка' in col:
+            score_col_name = col
+            break
+    
     for idx, row in df.iterrows():
         fio_raw = f"{row.get('Фамилия', '')} {row.get('Имя', '')}".strip()
         fio = re.sub(r'[★*]', '', fio_raw).strip()
@@ -136,18 +176,14 @@ def clean_practice_file(df, practice_num):
         test_start = parse_russian_date(row.get('Тест начат'))
         test_end = parse_russian_date(row.get('Завершено'))
         time_spent = time_to_minutes(row.get('Затраченное время'))
-        score_raw = row.get('Оценка/5,00', row.get('Оценка', 0))
-        if pd.isna(score_raw) or score_raw == '-' or score_raw == '—' or str(score_raw).strip() == '':
-            score = 0
-        else:
-            try:
-                score_str = str(score_raw).replace(',', '.').strip()
-                score = float(score_str)
-            except:
-                score = 0
+        
+        score_raw = row.get(score_col_name, 0) if score_col_name else 0
+        grade, max_score = get_max_score_and_convert(score_raw, score_col_name)
+        
         cleaned_data.append({
             'ФИО': fio,
-            f'Оценка_{practice_num}': score,
+            f'Оценка_{practice_num}': grade,
+            f'Макс_балл_{practice_num}': max_score,
             f'Тест_начат_{practice_num}': test_start,
             f'Завершено_{practice_num}': test_end,
             f'Затраченное_время_{practice_num}': time_spent
@@ -190,7 +226,10 @@ def grade_cat_for_stats(score):
     else:
         return 5
 
+# =====================================================
 # ЗАГРУЗКА ДАННЫХ
+# =====================================================
+
 if 'df_processed' not in st.session_state:
     st.session_state.df_processed = None
 if 'practice_nums' not in st.session_state:
@@ -279,7 +318,10 @@ if uploaded_files:
                 with st.expander("Предпросмотр обработанных данных"):
                     st.dataframe(final_df.head(10), use_container_width=True)
 
+# =====================================================
 # АНАЛИЗ ДАННЫХ
+# =====================================================
+
 if st.session_state.df_processed is not None:
     df = st.session_state.df_processed
     practice_nums = st.session_state.practice_nums
@@ -357,48 +399,59 @@ if st.session_state.df_processed is not None:
     
     st.markdown("---")
     
-    # ОСНОВНЫЕ ВКЛАДКИ
-    tab_students, tab_practices, tab_correlations, tab_stats = st.tabs([
-        "Студенты", "Анализ практик", "Корреляции", "Статистика"
+    # ========== ОСНОВНЫЕ ВКЛАДКИ ==========
+    tab_students, tab_practices, tab_stats = st.tabs([
+        "Студенты", "Анализ практик", "Статистика"
     ])
     
-    # ВКЛАДКА 1: СТУДЕНТЫ
+    # ========== ВКЛАДКА 1: СТУДЕНТЫ (с поиском) ==========
     with tab_students:
         st.markdown("<h3 style='color:#8B0000;'>Все студенты</h3>", unsafe_allow_html=True)
-        st.markdown("<p>Нажмите на ID студента, чтобы увидеть подробную информацию</p>", unsafe_allow_html=True)
         
-        if 'selected_student' not in st.session_state:
-            st.session_state.selected_student = None
+        search_name = st.text_input("🔍 Поиск по ФИО", placeholder="Введите фамилию или имя...")
         
-        for _, student in stats_df.iterrows():
-            col1, col2, col3, col4, col5, col6 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5])
-            with col1:
-                if st.button(f"ID {int(student['ID'])}", key=f"btn_{student['ID']}"):
-                    st.session_state.selected_student = student['ID']
-            with col2:
-                st.write(f"{student['ФИО']}")
-            with col3:
-                st.write(f"Успеваемость: {student['Процент от максимума']:.1f}%")
-            with col4:
-                st.write(f"Выполнено: {student['Выполнено практик']} из {student['Всего практик']}")
-            with col5:
-                cluster_id = int(student['Кластер'])
-                if cluster_id == 0:
-                    st.markdown("<span class='badge-cluster-0'>Кластер 0</span>", unsafe_allow_html=True)
-                elif cluster_id == 1:
-                    st.markdown("<span class='badge-cluster-1'>Кластер 1</span>", unsafe_allow_html=True)
-                elif cluster_id == 2:
-                    st.markdown("<span class='badge-cluster-2'>Кластер 2</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown("<span class='badge-cluster-3'>Кластер 3</span>", unsafe_allow_html=True)
-            with col6:
-                if student['Группа риска']:
-                    st.markdown("<span class='badge-cluster-3'>Группа риска</span>", unsafe_allow_html=True)
-                else:
-                    if student['Процент от максимума'] >= 70:
-                        st.markdown("<span class='badge-cluster-0'>Высокая успеваемость</span>", unsafe_allow_html=True)
+        filtered_stats = stats_df
+        if search_name:
+            filtered_stats = stats_df[stats_df['ФИО'].str.contains(search_name, case=False, na=False)]
+        
+        if len(filtered_stats) == 0:
+            st.warning("Студенты не найдены")
+        else:
+            st.markdown(f"<p>Найдено студентов: {len(filtered_stats)}</p>", unsafe_allow_html=True)
+            st.markdown("<p>Нажмите на ID студента, чтобы увидеть подробную информацию</p>", unsafe_allow_html=True)
+            
+            if 'selected_student' not in st.session_state:
+                st.session_state.selected_student = None
+            
+            for _, student in filtered_stats.iterrows():
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 2, 1.5, 1.5, 1.5, 1.5])
+                with col1:
+                    if st.button(f"ID {int(student['ID'])}", key=f"btn_{student['ID']}"):
+                        st.session_state.selected_student = student['ID']
+                with col2:
+                    st.write(f"{student['ФИО']}")
+                with col3:
+                    st.write(f"Успеваемость: {student['Процент от максимума']:.1f}%")
+                with col4:
+                    st.write(f"Выполнено: {student['Выполнено практик']} из {student['Всего практик']}")
+                with col5:
+                    cluster_id = int(student['Кластер'])
+                    if cluster_id == 0:
+                        st.markdown("<span class='badge-cluster-0'>Кластер 0</span>", unsafe_allow_html=True)
+                    elif cluster_id == 1:
+                        st.markdown("<span class='badge-cluster-1'>Кластер 1</span>", unsafe_allow_html=True)
+                    elif cluster_id == 2:
+                        st.markdown("<span class='badge-cluster-2'>Кластер 2</span>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<span class='badge-cluster-2'>Средняя успеваемость</span>", unsafe_allow_html=True)
+                        st.markdown("<span class='badge-cluster-3'>Кластер 3</span>", unsafe_allow_html=True)
+                with col6:
+                    if student['Группа риска']:
+                        st.markdown("<span class='badge-cluster-3'>Группа риска</span>", unsafe_allow_html=True)
+                    else:
+                        if student['Процент от максимума'] >= 70:
+                            st.markdown("<span class='badge-cluster-0'>Высокая успеваемость</span>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("<span class='badge-cluster-2'>Средняя успеваемость</span>", unsafe_allow_html=True)
         
         # Детальная информация о студенте
         if st.session_state.selected_student is not None:
@@ -436,7 +489,7 @@ if st.session_state.df_processed is not None:
                 practice_df = pd.DataFrame(practice_results)
                 def highlight_status(val):
                     return 'background-color: #ffcccc' if val == 'не выполнено' else ''
-                st.dataframe(practice_df.style.map(highlight_status, subset=['Статус']), 
+                st.dataframe(practice_df.style.applymap(highlight_status, subset=['Статус']), 
                             use_container_width=True, hide_index=True)
                 
                 failed = [n for n in practice_nums if student_row.get(f'Оценка_{n}', 0) <= 0]
@@ -478,7 +531,7 @@ if st.session_state.df_processed is not None:
                 st.session_state.selected_student = None
                 st.rerun()
     
-    # ВКЛАДКА 2: АНАЛИЗ ПРАКТИК
+    # ========== ВКЛАДКА 2: АНАЛИЗ ПРАКТИК (с поиском) ==========
     with tab_practices:
         st.markdown("<h3 style='color:#8B0000;'>Анализ практик</h3>", unsafe_allow_html=True)
         
@@ -532,40 +585,56 @@ if st.session_state.df_processed is not None:
             })
         
         practice_df = pd.DataFrame(practice_stats)
-        st.dataframe(practice_df, use_container_width=True, hide_index=True)
         
-        col1, col2 = st.columns(2)
+        # Поиск по номеру практики
+        search_practice = st.text_input("🔍 Поиск по номеру практики", placeholder="Введите номер практики...")
         
-        with col1:
-            st.subheader("Доля выполнивших")
-            fig = px.bar(practice_df, x='Практика', y='Выполнили, %', 
-                         title="Доля студентов, выполнивших практики",
-                         color='Выполнили, %', color_continuous_scale='Reds')
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+        filtered_practices = practice_df
+        if search_practice:
+            try:
+                num = int(search_practice)
+                filtered_practices = practice_df[practice_df['Практика'] == num]
+            except:
+                filtered_practices = practice_df[practice_df['Практика'].astype(str).str.contains(search_practice, case=False)]
         
-        with col2:
-            st.subheader("Медианная оценка")
-            fig2 = px.bar(practice_df, x='Практика', y='Медианная оценка',
-                          title="Медианная оценка по практикам",
-                          color='Медианная оценка', color_continuous_scale='RdYlGn')
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        st.subheader("Распределение оценок")
-        grade_df = practice_df[['Практика', '% оценок 2', '% оценок 3', '% оценок 4', '% оценок 5']].melt(
-            id_vars=['Практика'], var_name='Оценка', value_name='Процент'
-        )
-        fig3 = px.bar(grade_df, x='Практика', y='Процент', color='Оценка',
-                      title="Распределение оценок по практикам",
-                      color_discrete_map={'% оценок 2': '#dc3545', '% оценок 3': '#ffc107',
-                                          '% оценок 4': '#28a745', '% оценок 5': '#8B0000'},
-                      barmode='group')
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        st.subheader("Узкие места курса")
-        problem = practice_df.nsmallest(5, 'Выполнили, %')
-        st.dataframe(problem[['Практика', 'Выполнили, %', 'Медианная оценка', '% без опозданий']], 
-                     use_container_width=True, hide_index=True)
+        if len(filtered_practices) == 0:
+            st.warning("Практика не найдена")
+        else:
+            st.dataframe(filtered_practices, use_container_width=True, hide_index=True)
+            
+            if len(filtered_practices) > 0:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Доля выполнивших")
+                    fig = px.bar(filtered_practices, x='Практика', y='Выполнили, %', 
+                                 title="Доля студентов, выполнивших практики",
+                                 color='Выполнили, %', color_continuous_scale='Reds')
+                    fig.update_layout(showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    st.subheader("Медианная оценка")
+                    fig2 = px.bar(filtered_practices, x='Практика', y='Медианная оценка',
+                                  title="Медианная оценка по практикам",
+                                  color='Медианная оценка', color_continuous_scale='RdYlGn')
+                    st.plotly_chart(fig2, use_container_width=True)
+                
+                st.subheader("Распределение оценок")
+                grade_df = filtered_practices[['Практика', '% оценок 2', '% оценок 3', '% оценок 4', '% оценок 5']].melt(
+                    id_vars=['Практика'], var_name='Оценка', value_name='Процент'
+                )
+                fig3 = px.bar(grade_df, x='Практика', y='Процент', color='Оценка',
+                              title="Распределение оценок по практикам",
+                              color_discrete_map={'% оценок 2': '#dc3545', '% оценок 3': '#ffc107',
+                                                  '% оценок 4': '#28a745', '% оценок 5': '#8B0000'},
+                              barmode='group')
+                st.plotly_chart(fig3, use_container_width=True)
+                
+                st.subheader("Узкие места курса")
+                problem = filtered_practices.nsmallest(5, 'Выполнили, %')
+                st.dataframe(problem[['Практика', 'Выполнили, %', 'Медианная оценка', '% без опозданий']], 
+                             use_container_width=True, hide_index=True)
         
         st.caption("""
         **Пояснение:**
@@ -576,74 +645,7 @@ if st.session_state.df_processed is not None:
         - % без опозданий — доля выполнивших без задержки (начали в срок или раньше)
         """)
     
-    # ВКЛАДКА 3: КОРРЕЛЯЦИИ
-    with tab_correlations:
-        st.markdown("<h3 style='color:#8B0000;'>Корреляционный анализ</h3>", unsafe_allow_html=True)
-        
-        # Сбор данных для корреляций
-        corr_data = []
-        for n in practice_nums:
-            scores = df[f'Оценка_{n}'].values
-            times = df[f'Затраченное_время_{n}'].values
-            delays = df.get(f'Запаздывание_{n}', pd.Series([0]*len(df))).values
-            
-            mask = scores > 0
-            if mask.sum() > 1:
-                corr_data.append({
-                    'Практика': n,
-                    'Оценка-Время': np.corrcoef(scores[mask], times[mask])[0, 1] if len(times[mask]) > 1 else 0,
-                    'Оценка-Опоздание': np.corrcoef(scores[mask], delays[mask])[0, 1] if len(delays[mask]) > 1 else 0,
-                    'Время-Опоздание': np.corrcoef(times[mask], delays[mask])[0, 1] if len(delays[mask]) > 1 else 0
-                })
-            else:
-                corr_data.append({'Практика': n, 'Оценка-Время': 0, 'Оценка-Опоздание': 0, 'Время-Опоздание': 0})
-        
-        corr_df = pd.DataFrame(corr_data)
-        
-        st.subheader("Средние корреляции по всем практикам")
-        avg_corr = pd.DataFrame({
-            'Пара': ['Оценка-Время', 'Оценка-Опоздание', 'Время-Опоздание'],
-            'Корреляция': [
-                corr_df['Оценка-Время'].mean(),
-                corr_df['Оценка-Опоздание'].mean(),
-                corr_df['Время-Опоздание'].mean()
-            ]
-        })
-        fig3 = px.bar(avg_corr, x='Пара', y='Корреляция', 
-                      title="Средние корреляции между показателями",
-                      color='Корреляция', color_continuous_scale='RdBu_r')
-        st.plotly_chart(fig3, use_container_width=True)
-        
-        st.subheader("Корреляции по отдельным практикам")
-        st.dataframe(corr_df.round(3), use_container_width=True, hide_index=True)
-        
-        st.subheader("Общая корреляционная матрица")
-        all_scores = []
-        all_times = []
-        all_delays = []
-        for n in practice_nums:
-            mask = df[f'Оценка_{n}'] > 0
-            all_scores.extend(df[f'Оценка_{n}'][mask].values)
-            all_times.extend(df[f'Затраченное_время_{n}'][mask].values)
-            delays = df.get(f'Запаздывание_{n}', pd.Series([0]*len(df)))[mask].values
-            all_delays.extend(delays)
-        
-        if len(all_scores) > 2:
-            overall_corr = pd.DataFrame({
-                'Оценка': all_scores,
-                'Время (мин)': all_times,
-                'Опоздание (дни)': all_delays
-            }).corr()
-            st.dataframe(overall_corr.round(3), use_container_width=True)
-            
-            st.caption("""
-            **Интерпретация корреляций:**
-            - Близко к 1 → сильная положительная связь
-            - Близко к -1 → сильная отрицательная связь
-            - Близко к 0 → связь отсутствует
-            """)
-    
-    # ВКЛАДКА 4: СТАТИСТИКА
+    # ========== ВКЛАДКА 3: СТАТИСТИКА ==========
     with tab_stats:
         st.markdown("<h3 style='color:#8B0000;'>Типы студентов (кластеры)</h3>", unsafe_allow_html=True)
         
