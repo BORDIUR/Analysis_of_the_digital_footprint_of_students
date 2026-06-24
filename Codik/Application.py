@@ -391,7 +391,7 @@ if st.session_state.df_processed is not None:
     else:
         stats_df['Группа риска'] = 0
     
-    stats_df = stats_df.sort_values(['Группа риска', 'Процент от максимума'], ascending=[False, False])
+    stats_df = stats_df.sort_values('Процент от максимума', ascending=False)
     
     # Основные метрики
     col1, col2, col3, col4 = st.columns(4)
